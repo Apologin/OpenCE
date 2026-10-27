@@ -61,6 +61,13 @@ written */
 GLuint xgpu_compile_shader(GLenum type, const char *code, const char *what);
 GLuint xgpu_link_program(GLuint vertex_shader, GLuint fragment_shader, const char *what);
 
+/* the shader warm-up (xgpu_shader_cache.c): the programs linked in earlier
+runs, linked again at start-up, and given out instead of linking mid-frame */
+void xgpu_shader_cache_warm_up(void);
+void xgpu_shader_cache_shader_compiled(GLuint shader, GLenum type, const char *source);
+GLuint xgpu_shader_cache_program(GLuint vertex_shader, GLuint fragment_shader);
+void xgpu_shader_cache_program_linked(GLuint vertex_shader, GLuint fragment_shader);
+
 /* ---------- generated source text */
 
 struct xgpu_text

@@ -1350,14 +1350,19 @@ GLuint xgpu_compile_shader(GLenum type, const char *source, const char *what)
 		glDeleteShader(shader);
 		return 0;
 	}
+	xgpu_shader_cache_shader_compiled(shader, type, source);
 	return shader;
 }
 
 GLuint xgpu_link_program(GLuint vertex_shader, GLuint fragment_shader, const char *what)
 {
-	GLuint program = glCreateProgram();
+	GLuint program = xgpu_shader_cache_program(vertex_shader, fragment_shader);
 	GLint status = 0;
 
+	/* (warmed up at start-up: xgpu_shader_cache.c) */
+	if (program)
+		return program;
+	program = glCreateProgram();
 	glAttachShader(program, vertex_shader);
 	glAttachShader(program, fragment_shader);
 	glLinkProgram(program);
@@ -1370,6 +1375,7 @@ GLuint xgpu_link_program(GLuint vertex_shader, GLuint fragment_shader, const cha
 		platform_log("cannot link the %s program: %s", what, log);
 		return 0;
 	}
+	xgpu_shader_cache_program_linked(vertex_shader, fragment_shader);
 	return program;
 }
 
@@ -2021,6 +2027,10 @@ static void gl_initialize(void)
 	else
 		anti_aliasing_prepare();
 	hdr_read();
+	/* the programs earlier runs linked, linked again now (behind the
+	loading screen), so that draws do not link them mid-game */
+	xgpu_shader_cache_warm_up();
+	xgpu_gl_state_invalidate();
 }
 
 /* what display.anti_aliasing's value needs of the GL context, once there is
