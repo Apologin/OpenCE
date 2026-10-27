@@ -688,6 +688,11 @@ static const struct config_setting config_settings[] =
 	{ "debug.network_test_name", _config_string, "\"\"", "HALO_NETWORK_TEST_NAME", _environment_value, _platform_all,
 		"The name this machine's player takes in an automated test game (ASCII);\n"
 		"empty keeps its profile's." },
+	{ "debug.network_test_color", _config_string, "\"\"", "HALO_NETWORK_TEST_COLOR", _environment_value, _platform_all,
+		"The armor color this machine's player takes in an automated test game:\n"
+		"one of the multiplayer colors (white, black, red, blue, gray, yellow,\n"
+		"green, pink, purple, cyan, cobalt, orange, teal, sage, brown, tan, maroon,\n"
+		"salmon); empty keeps its profile's. Team games color by team." },
 	{ "debug.network_test_pickup_weapon", _config_string, "\"\"", "HALO_NETWORK_TEST_PICKUP_WEAPON", _environment_value,
 		_platform_all,
 		"The weapon network_test_pickup stands the player on: the first whose tag\n"

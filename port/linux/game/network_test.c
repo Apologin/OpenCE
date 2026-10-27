@@ -689,18 +689,40 @@ profile's, which it joins with), in ASCII */
 static void network_test_set_name(
 	void)
 {
+	/* the multiplayer armor colors, in the profile's order (shield_color.c) */
+	static char const *const color_names[] =
+	{
+		"white", "black", "red", "blue", "gray", "yellow", "green", "pink", "purple",
+		"cyan", "cobalt", "orange", "teal", "sage", "brown", "tan", "maroon", "salmon",
+	};
 	char const *name = config_string("debug.network_test_name");
+	char const *color = config_string("debug.network_test_color");
 	struct player_profile profile;
+	short color_index = NONE;
 	short index;
 
-	if (!name || !name[0])
+	for (index = 0; color && index < (short)NUMBEROF(color_names); index++)
+	{
+		if (!strcmp(color, color_names[index]))
+			color_index = index;
+	}
+	if ((!name || !name[0]) && color_index == NONE)
 		return;
 	player_ui_get_active_player_profile(0, &profile);
-	for (index = 0; name[index] && index < MAXIMUM_PLAYER_PROFILE_NAME_LENGTH - 1; index++)
-		profile.player_name[index] = (wchar_t)(unsigned char)name[index];
-	profile.player_name[index] = 0;
+	if (name && name[0])
+	{
+		for (index = 0; name[index] && index < MAXIMUM_PLAYER_PROFILE_NAME_LENGTH - 1; index++)
+			profile.player_name[index] = (wchar_t)(unsigned char)name[index];
+		profile.player_name[index] = 0;
+		platform_log("network test: this machine's player is named %s", name);
+	}
+	/* (debug.network_test_color: the room's color for its player, a launcher's) */
+	if (color_index != NONE)
+	{
+		profile.primary_color_index = color_index;
+		platform_log("network test: this machine's player is %s", color_names[color_index]);
+	}
 	player_ui_set_active_player_profile(0, player_ui_get_active_player_profile_index(0), &profile);
-	platform_log("network test: this machine's player is named %s", name);
 }
 
 /* debug.network_test_chat: the host seats the last two players in one
