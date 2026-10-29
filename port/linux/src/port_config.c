@@ -667,7 +667,8 @@ static const struct config_setting config_settings[] =
 		"team_slayer, ctf, king, oddball, ...) or one of OpenCE's (swat, ...)." },
 	{ "auto.start", _config_real, "0.0", "HALO_AUTO_START", _environment_value, _platform_all,
 		"Seconds after hosting that auto.game's host starts each game (once its\n"
-		"player is in); 0 at once." },
+		"player is in); 0 at once, negative when the launcher asks\n"
+		"(auto_game_start_now)." },
 	{ "auto.score", _config_integer, "0", "HALO_AUTO_SCORE", _environment_value, _platform_all,
 		"The score auto.game's games play to; 0 the game type's own." },
 	{ "auto.name", _config_string, "\"\"", "HALO_AUTO_NAME", _environment_value, _platform_all,

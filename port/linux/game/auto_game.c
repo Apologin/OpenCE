@@ -9,8 +9,10 @@ HALO_AUTO_GAME:
   auto.game_type, as the pregame screen's fast setup does but with that map
   and game type from the start (fast setup's own is the playlist's Derelict,
   which every machine would then need), adds this machine's player and starts
-  the game auto.start seconds after hosting, once that player is in. Once a
-  game is over and its scores have been shown a while, the next, the same;
+  the game auto.start seconds after hosting, once that player is in (a
+  negative auto.start: when the launcher calls auto_game_start_now, as a
+  host's Start button might). Once a game is over and its scores have been
+  shown a while, the next, the same;
 - "local" the same with a local (split screen) game of one player, as
   Multiplayer > Split Screen sets one up (the bots' games, bots.count);
 - "join" searches for system link games and joins the first it finds, as
@@ -53,6 +55,12 @@ Called from the main loop every frame (main.c).
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten/emscripten.h>
+#else
+#define EMSCRIPTEN_KEEPALIVE
+#endif
 
 /* the platform layer's (port/linux/src/port_config.c) */
 const char *config_string(char const *name);
@@ -97,6 +105,17 @@ static struct
 	long scores_tick;
 	boolean over_logged;
 } auto_game;
+
+/* the launcher asked for the start (auto_game_start_now; any thread) */
+static volatile int auto_game_start_asked;
+
+/* Start the host's game now, once its player is in, when auto.start is
+negative (the launcher's call: the web page's, from its thread) */
+EMSCRIPTEN_KEEPALIVE void auto_game_start_now(
+	void)
+{
+	__atomic_store_n(&auto_game_start_asked, 1, __ATOMIC_RELAXED);
+}
 
 static void auto_game_read_settings(
 	void)
@@ -377,6 +396,7 @@ static void auto_game_update_host(
 		auto_game.postgame_seconds = 0.0f;
 		auto_game.started = FALSE;
 		auto_game.setup_seconds = 0.0f;
+		__atomic_store_n(&auto_game_start_asked, 0, __ATOMIC_RELAXED);
 		if (global_network_game_server_get())
 		{
 			/* (the scores' map choice holds the countdown, as picking the
@@ -410,7 +430,9 @@ static void auto_game_update_host(
 		else
 			network_game_client_add_player(global_network_game_client_get(), 0);
 	}
-	if (auto_game.player_in && auto_game.setup_seconds >= auto_game.start_delay)
+	if (auto_game.player_in && (auto_game.start_delay < 0.0f
+		? __atomic_exchange_n(&auto_game_start_asked, 0, __ATOMIC_RELAXED)
+		: auto_game.setup_seconds >= auto_game.start_delay))
 	{
 		auto_game.started = TRUE;
 		network_game_client_request_immediate_start();
