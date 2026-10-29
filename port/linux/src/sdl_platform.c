@@ -134,7 +134,7 @@ static void data_check_maps(void)
 	char message[2048];
 	char where[1200];
 	BOOL quiet = config_boolean("debug.hidden_window") || config_real("debug.exit_after") > 0.0 ||
-		config_string("debug.network_test")[0];
+		config_string("debug.network_test")[0] || config_string("auto.game")[0];
 
 	platform_maps_folder_check(&maps);
 	snprintf(where, sizeof(where),

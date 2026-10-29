@@ -1680,6 +1680,9 @@ boolean network_game_client_begin_game(
 		network_event("the host started the game while its map is being downloaded: joining it once the map is there");
 		return TRUE;
 	}
+	/* (said before the map's load, which holds this thread: for a launcher,
+	port/linux/game/auto_game.c) */
+	network_event("the host started the game: loading it");
 	return network_game_client_game_has_started(client);
 }
 
@@ -3264,6 +3267,24 @@ boolean network_game_client_join_first_available_game(
 /* ... and puts this machine's players on a team (a team game needs both
 teams), as the pregame screen's team choice does; NONE: the other team from
 another machine's player */
+/* port: whether the host's settings have a player of this machine (an
+automated game starts once they do: port/linux/game/auto_game.c) */
+boolean network_game_client_port_has_local_player(
+	void)
+{
+	struct network_game_client *client = global_network_game_client_get();
+	short player_index;
+
+	for (player_index = 0; client && player_index < MAXIMUM_NUMBER_OF_PLAYERS; player_index++)
+	{
+		struct network_player const *player = &client->game.players[player_index];
+
+		if (network_player_is_valid(player) && player->machine_index == (char)client->machine_index)
+			return TRUE;
+	}
+	return FALSE;
+}
+
 boolean network_game_client_set_team(
 	char team_index)
 {

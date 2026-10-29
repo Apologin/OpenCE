@@ -39,6 +39,9 @@ boolean network_game_client_join_first_available_game(
 	void);
 boolean network_game_client_set_team(
 	char team_index);
+/* port: whether the host's settings have a player of this machine */
+boolean network_game_client_port_has_local_player(
+	void);
 /* whether the advertised game's host has this machine's network version
 (else the player is told, and it is not to be joined) */
 /* port: whether the advertised game is under way, not in its lobby */

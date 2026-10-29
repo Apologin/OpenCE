@@ -655,6 +655,30 @@ static const struct config_setting config_settings[] =
 		"Sentry project (port/windows/src/win32_crash.c): \"yes\" sends them, \"no\"\n"
 		"never does, \"ask\" asks at the next crash and writes the answer here." },
 
+	{ "auto.game", _config_string, "\"\"", "HALO_AUTO_GAME", _environment_value, _platform_all,
+		"A game set up without the menus, for a launcher (port/linux/game/auto_game.c):\n"
+		"\"host\" hosts a system link game on auto.map and starts it, \"local\" plays\n"
+		"a local (split screen) game on it, \"join\" joins the first system link\n"
+		"game found; empty for none." },
+	{ "auto.map", _config_string, "\"\"", "HALO_AUTO_MAP", _environment_value, _platform_all,
+		"The map auto.game hosts: a multiplayer map's name (bloodgulch, ...)." },
+	{ "auto.game_type", _config_string, "\"slayer\"", "HALO_AUTO_GAME_TYPE", _environment_value, _platform_all,
+		"The game type auto.game hosts, every game: a built-in one's name (slayer,\n"
+		"team_slayer, ctf, king, oddball, ...) or one of OpenCE's (swat, ...)." },
+	{ "auto.start", _config_real, "0.0", "HALO_AUTO_START", _environment_value, _platform_all,
+		"Seconds after hosting that auto.game's host starts each game (once its\n"
+		"player is in); 0 at once." },
+	{ "auto.score", _config_integer, "0", "HALO_AUTO_SCORE", _environment_value, _platform_all,
+		"The score auto.game's games play to; 0 the game type's own." },
+	{ "auto.name", _config_string, "\"\"", "HALO_AUTO_NAME", _environment_value, _platform_all,
+		"The name this machine's player takes in auto.game's games (ASCII); empty\n"
+		"keeps its profile's." },
+	{ "auto.color", _config_string, "\"\"", "HALO_AUTO_COLOR", _environment_value, _platform_all,
+		"The armor color this machine's player takes in auto.game's games: one of\n"
+		"the multiplayer colors (white, black, red, blue, gray, yellow, green, pink,\n"
+		"purple, cyan, cobalt, orange, teal, sage, brown, tan, maroon, salmon);\n"
+		"empty keeps its profile's. Team games color by team." },
+
 	{ "debug.network_test", _config_string, "\"\"", "HALO_NETWORK_TEST", _environment_value, _platform_all,
 		"Automated system link sessions for testing (port/linux/game/network_test.c):\n"
 		"\"host:<map>\" hosts a game on that map, \"local:<map>\" plays a local (split\n"
