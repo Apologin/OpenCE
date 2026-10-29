@@ -22,7 +22,13 @@ auto.color this machine's player's name and armor color.
 
 It logs a line at each step ("auto game: ..."), and "auto game: playing <map>"
 once each game has run here for half a second, for a launcher to follow.
-Unlike debug.network_test (network_test.c), it logs nothing while the game
+While a game runs the host (or a local game) logs its scores, for a launcher's
+scoreboard: each player's name once a game ("auto game: player 2 is named
+Sam"), and every player's score (the game type's own), kills, deaths and team
+when any of them changes, at most twice a second ("auto game: scores playing to
+25: player 0 s3 k3 d1 t0; player 2 s1 k1 d2 t1"), and at once as the match
+ends, before its scores screen ("... scores game over to 25: ..."). Unlike
+debug.network_test (network_test.c), it logs nothing else while the game
 runs. (A machine logs "the host started the game: loading it" as it begins
 loading a game the host started: network_client_manager.c.)
 
@@ -41,7 +47,10 @@ Called from the main loop every frame (main.c).
 #include "networking/network_server_manager.h"
 #include "game/game.h"
 #include "game/game_engine.h"
+#include "memory/data.h"
+#include "game/players.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -80,6 +89,13 @@ static struct
 	whether "playing" is logged */
 	long first_tick;
 	boolean playing;
+	/* the host's scores: each player's name logged this game (by its
+	absolute index), the last scores line and when it was looked at, and
+	whether the match's end is logged */
+	wchar_t named[HALO_PORT_MAXIMUM_NETWORK_PLAYERS][12];
+	char scores_line[2048];
+	long scores_tick;
+	boolean over_logged;
 } auto_game;
 
 static void auto_game_read_settings(
@@ -91,6 +107,7 @@ static void auto_game_read_settings(
 
 	auto_game.checked = TRUE;
 	auto_game.first_tick = NONE;
+	auto_game.scores_tick = NONE;
 	if (!strcmp(mode, "host"))
 		auto_game.mode = _auto_game_host;
 	else if (!strcmp(mode, "local"))
@@ -257,6 +274,78 @@ static void auto_game_join(
 	}
 }
 
+/* appends to a line, cut short when it is full */
+static void auto_game_append(
+	char *line,
+	int size,
+	int *length,
+	char const *format,
+	...)
+{
+	va_list arguments;
+	int written;
+
+	if (*length >= size - 1)
+		return;
+	va_start(arguments, format);
+	written = vsnprintf(line + *length, (size_t)(size - *length), format, arguments);
+	va_end(arguments);
+	if (written > 0)
+		*length = MIN(*length + written, size - 1);
+}
+
+/* the host's scores, while a game runs: names new this game, then the scores
+when they changed (looked at twice a second), or the match just ended */
+static void auto_game_log_scores(
+	void)
+{
+	struct data_iterator iterator;
+	struct player_datum *player;
+	boolean over = game_engine_running() && !game_engine_can_score();
+	char line[sizeof(auto_game.scores_line)];
+	int length = 0;
+
+	if (!game_engine_running() || (auto_game.over_logged && over))
+		return;
+	if (!over && auto_game.scores_tick != NONE && game_time_get() >= auto_game.scores_tick &&
+		game_time_get() - auto_game.scores_tick < TICKS_PER_SECOND / 2)
+	{
+		return;
+	}
+	auto_game.scores_tick = game_time_get();
+	data_iterator_new(&iterator, player_data);
+	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
+	{
+		long absolute_index = DATUM_INDEX_TO_ABSOLUTE_INDEX(iterator.datum_index);
+
+		if (absolute_index >= HALO_PORT_MAXIMUM_NETWORK_PLAYERS)
+			continue;
+		if (csmemcmp(auto_game.named[absolute_index], player->name, sizeof(auto_game.named[absolute_index])))
+		{
+			char name[13];
+			short index;
+
+			csmemcpy(auto_game.named[absolute_index], player->name, sizeof(auto_game.named[absolute_index]));
+			for (index = 0; index < 12 && player->name[index]; index++)
+				name[index] = player->name[index] >= 32 && player->name[index] < 127 ? (char)player->name[index] : '?';
+			name[index] = 0;
+			platform_log("auto game: player %ld is named %s", absolute_index, name);
+		}
+		auto_game_append(line, (int)sizeof(line), &length, "%s player %ld s%ld k%d d%d t%ld", length ? ";" : "",
+			absolute_index,
+			game_engine && game_engine->get_player_score ?
+				game_engine->get_player_score(iterator.datum_index, _get_score_individual) : -1L,
+			player->statistics.kills[0], player->statistics.deaths, (long)player->team_index);
+	}
+	line[length] = 0;
+	if (!over && !strcmp(line, auto_game.scores_line))
+		return;
+	snprintf(auto_game.scores_line, sizeof(auto_game.scores_line), "%s", line);
+	auto_game.over_logged = over;
+	platform_log("auto game: scores %s to %ld:%s", over ? "game over" : "playing",
+		(long)game_engine_get_variant()->universal_variant.score_to_win, line);
+}
+
 /* the host's: its player in, then the start; and after a game's scores the next */
 static void auto_game_update_host(
 	boolean main_menu_loaded,
@@ -370,11 +459,18 @@ void auto_game_update(
 			auto_game.playing = TRUE;
 			platform_log("auto game: playing %s", main_get_multiplayer_map_name());
 		}
+		if (auto_game.mode != _auto_game_join)
+			auto_game_log_scores();
 	}
 	else if (main_menu_loaded)
 	{
 		auto_game.first_tick = NONE;
 		auto_game.playing = FALSE;
+		/* (the next game's names and scores logged afresh) */
+		csmemset(auto_game.named, 0, sizeof(auto_game.named));
+		auto_game.scores_line[0] = 0;
+		auto_game.scores_tick = NONE;
+		auto_game.over_logged = FALSE;
 	}
 
 	if (main_menu_loaded && !auto_game.set_up)
