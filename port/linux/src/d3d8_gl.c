@@ -1354,6 +1354,20 @@ GLuint xgpu_compile_shader(GLenum type, const char *source, const char *what)
 	return shader;
 }
 
+/* A draw's shader: the one compiled already for this source (the warm-up's,
+or an earlier draw's: xgpu_shader_cache.c) when there is one. The draws'
+shaders are never deleted, so they can be shared. */
+static GLuint draw_shader(GLenum type, const char *source, const char *what)
+{
+	GLuint shader = xgpu_shader_cache_shader(type, source);
+
+	if (shader)
+		return shader;
+	shader = xgpu_compile_shader(type, source, what);
+	xgpu_shader_cache_shader_shared(shader, type, source);
+	return shader;
+}
+
 GLuint xgpu_link_program(GLuint vertex_shader, GLuint fragment_shader, const char *what)
 {
 	GLuint program = xgpu_shader_cache_program(vertex_shader, fragment_shader);
@@ -3124,7 +3138,7 @@ static struct vertex_shader_object *fixed_function_program(void)
 
 		program.signature = VERTEX_SHADER_SIGNATURE;
 		program.instructions = no_instructions;
-		program.shader[1] = xgpu_compile_shader(GL_VERTEX_SHADER, source, "fixed-function vertex");
+		program.shader[1] = draw_shader(GL_VERTEX_SHADER, source, "fixed-function vertex");
 		/* (vertex_shader_get: neither variant compiled from instructions) */
 		program.shaders_tried = 1 | 2;
 		free(source);
@@ -3196,7 +3210,7 @@ static GLuint vertex_shader_get(struct vertex_shader_object *program, BOOL immed
 			immediate ? 0 : device.vertex_shader->packed_mask, lit ? &program->lighting : NULL);
 
 		program->shaders_tried |= tried;
-		*shader = xgpu_compile_shader(GL_VERTEX_SHADER, source, "vertex");
+		*shader = draw_shader(GL_VERTEX_SHADER, source, "vertex");
 		if (debug_settings.dump_shaders)
 		{
 			char path[512];
@@ -3248,7 +3262,7 @@ static GLuint fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 	entry->hash = hash;
 	entry->key = *key;
 	source = nv2a_pixel_shader_to_glsl(key);
-	entry->shader = xgpu_compile_shader(GL_FRAGMENT_SHADER, source, "pixel");
+	entry->shader = draw_shader(GL_FRAGMENT_SHADER, source, "pixel");
 	if (debug_settings.dump_shaders)
 	{
 		char path[512];

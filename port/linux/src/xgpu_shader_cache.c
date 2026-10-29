@@ -14,6 +14,12 @@ work out. When a draw then asks for the same pair, it is given the program
 made then instead of linking one mid-frame. The first game on a map still
 records what it meets; the next ones start warm.
 
+The shaders themselves are shared too: a draw that needs a shader whose
+source was compiled already (by the warm-up, or for an earlier draw) is
+given that one (xgpu_shader_cache_shader) instead of compiling it again,
+which in a browser waits for the compile mid-frame. Only the draws' shaders
+(d3d8_gl.c draw_shader), which are never deleted.
+
 shader_cache.bin: "XSC1", then records: 'S', the type (u32), the source's
 hash (u64), its length (u32) and the source; 'P', the vertex and the pixel
 shader's hashes (u64 each). Little-endian. A file that does not read is
@@ -43,6 +49,9 @@ struct cached_shader
 	hash64 hash;
 	GLenum type;
 	char *source;
+	/* compiled this run (the warm-up's, or a draw's), for every draw that
+	needs this source; else 0 */
+	GLuint name;
 };
 
 struct cached_program
@@ -107,6 +116,26 @@ static long program_find(hash64 vertex, hash64 fragment)
 	return -1;
 }
 
+/* this run's shader name -> the hash of its source */
+static void name_set(GLuint shader, hash64 hash)
+{
+	if (shader >= cache.name_capacity)
+	{
+		unsigned long wanted = cache.name_capacity ? cache.name_capacity : 1024;
+		hash64 *bigger;
+
+		while (wanted <= shader)
+			wanted *= 2;
+		bigger = realloc(cache.names, wanted * sizeof(*bigger));
+		if (!bigger)
+			return;
+		memset(bigger + cache.name_capacity, 0, (wanted - cache.name_capacity) * sizeof(*bigger));
+		cache.names = bigger;
+		cache.name_capacity = wanted;
+	}
+	cache.names[shader] = hash;
+}
+
 static BOOL grow(void **items, long *capacity, long count, size_t size, unsigned char **written)
 {
 	void *bigger;
@@ -147,6 +176,7 @@ static long shader_add(hash64 hash, GLenum type, const char *source, size_t leng
 	cache.shaders[cache.shader_count].hash = hash;
 	cache.shaders[cache.shader_count].type = type;
 	cache.shaders[cache.shader_count].source = copy;
+	cache.shaders[cache.shader_count].name = 0;
 	return cache.shader_count++;
 }
 
@@ -388,9 +418,13 @@ void xgpu_shader_cache_warm_up(void)
 		}
 		linked++;
 	}
-	/* (the programs keep what they were linked from) */
+	/* the shaders stay, for the draws that need them (a shader that didn't
+	compile only fails the links it's in, as compiling it again would) */
 	for (index = 0; index < cache.shader_count; index++)
-		glDeleteShader(names[index]);
+	{
+		cache.shaders[index].name = names[index];
+		name_set(names[index], cache.shaders[index].hash);
+	}
 	free(names);
 	platform_log("shader cache: %ld of %ld programs warmed up in %lu ms", linked, cache.program_count,
 		(unsigned long)(SDL_GetTicks() - start));
@@ -403,23 +437,31 @@ void xgpu_shader_cache_shader_compiled(GLuint shader, GLenum type, const char *s
 	cache_load();
 	if (!shader || !source)
 		return;
-	if (shader >= cache.name_capacity)
-	{
-		unsigned long wanted = cache.name_capacity ? cache.name_capacity : 1024;
-		hash64 *bigger;
-
-		while (wanted <= shader)
-			wanted *= 2;
-		bigger = realloc(cache.names, wanted * sizeof(*bigger));
-		if (!bigger)
-			return;
-		memset(bigger + cache.name_capacity, 0, (wanted - cache.name_capacity) * sizeof(*bigger));
-		cache.names = bigger;
-		cache.name_capacity = wanted;
-	}
 	hash = source_hash(type, source);
-	cache.names[shader] = hash;
+	name_set(shader, hash);
 	shader_add(hash, type, source, strlen(source));
+}
+
+GLuint xgpu_shader_cache_shader(GLenum type, const char *source)
+{
+	long index;
+
+	cache_load();
+	if (!source)
+		return 0;
+	index = shader_find(source_hash(type, source));
+	return index >= 0 ? cache.shaders[index].name : 0;
+}
+
+void xgpu_shader_cache_shader_shared(GLuint shader, GLenum type, const char *source)
+{
+	long index;
+
+	if (!shader || !source)
+		return;
+	index = shader_find(source_hash(type, source));
+	if (index >= 0)
+		cache.shaders[index].name = shader;
 }
 
 static hash64 name_hash(GLuint shader)
