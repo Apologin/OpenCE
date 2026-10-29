@@ -484,6 +484,10 @@ struct program_entry
 	GLuint vertex_shader;
 	GLuint fragment_shader;
 	GLuint program;
+	/* linking in the background (program_get), and when it was last asked
+	whether that's done; else 0 */
+	GLuint linking;
+	Uint64 linking_asked;
 	GLint constants;
 	GLint viewport_scale;
 	GLint viewport_offset;
@@ -1331,6 +1335,10 @@ void WINAPI D3DDevice_BlockUntilVerticalBlank(void)
 	pthread_mutex_unlock(&vertical_blank_lock);
 }
 
+#ifndef GL_COMPLETION_STATUS_KHR
+#define GL_COMPLETION_STATUS_KHR 0x91B1
+#endif
+
 /* ---------- GL helpers */
 
 GLuint xgpu_compile_shader(GLenum type, const char *source, const char *what)
@@ -1363,7 +1371,18 @@ static GLuint draw_shader(GLenum type, const char *source, const char *what)
 
 	if (shader)
 		return shader;
-	shader = xgpu_compile_shader(type, source, what);
+	if (xgpu_capabilities.parallel_compile)
+	{
+		/* compiled in the background with its program's link: asking how
+		the compile went would wait for it, so that's only asked if the
+		link fails (program_link_done) */
+		shader = glCreateShader(type);
+		glShaderSource(shader, 1, &source, NULL);
+		glCompileShader(shader);
+		xgpu_shader_cache_shader_compiled(shader, type, source);
+	}
+	else
+		shader = xgpu_compile_shader(type, source, what);
 	xgpu_shader_cache_shader_shared(shader, type, source);
 	return shader;
 }
@@ -1929,11 +1948,13 @@ static void gl_initialize(void)
 			host_gl_has_extension("GL_ANGLE_texture_compression_dxt3") &&
 			host_gl_has_extension("GL_ANGLE_texture_compression_dxt5"));
 		xgpu_capabilities.astc = host_gl_has_extension("GL_KHR_texture_compression_astc_ldr");
+		xgpu_capabilities.parallel_compile = host_gl_has_extension("GL_KHR_parallel_shader_compile");
 		platform_log("OpenGL ES %d.%d: copy image %d, border clamp %d, anisotropy %d, S3TC %d, ASTC %d, "
-			"sample counting %d, base vertex %d (%s), half float targets %d",
+			"sample counting %d, base vertex %d (%s), half float targets %d, parallel compile %d",
 			(int)major, (int)minor, xgpu_capabilities.copy_image, xgpu_capabilities.border_clamp,
 			xgpu_capabilities.anisotropy, xgpu_capabilities.s3tc, xgpu_capabilities.astc, xgpu_capabilities.atomic_counters,
-			xgpu_capabilities.base_vertex, base_vertex_source, xgpu_capabilities.color_buffer_half_float);
+			xgpu_capabilities.base_vertex, base_vertex_source, xgpu_capabilities.color_buffer_half_float,
+			xgpu_capabilities.parallel_compile);
 	}
 #else
 	if (config_boolean("debug.gl_debug"))
@@ -3282,13 +3303,68 @@ static GLuint fragment_shader_get(const struct nv2a_pixel_shader_key *key)
 	return entry->shader;
 }
 
+/* program_get's answer while a program links in the background: the draw
+is skipped (its object shows a few frames late, the first time) instead of
+the frame waiting for the browser to compile it, which took 60-90 ms a
+program on Direct3D */
+static struct program_entry program_linking;
+
+static void program_setup(struct program_entry *entry);
+
+static void shader_log(GLuint shader)
+{
+	GLint status = 0;
+	char log[4096];
+
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+	if (status)
+		return;
+	glGetShaderInfoLog(shader, sizeof(log), NULL, log);
+	platform_log("cannot compile a shader:\n%s", log);
+}
+
+/* A background link done yet? (asked at most every 2 ms: the question is a
+round trip in a browser) Then its program is set up, or, failed, dropped */
+static BOOL program_link_done(struct program_entry *entry)
+{
+	GLint done = 0, status = 0;
+	Uint64 now = SDL_GetTicksNS();
+
+	if (now - entry->linking_asked < 2000000)
+		return FALSE;
+	entry->linking_asked = now;
+	glGetProgramiv(entry->linking, GL_COMPLETION_STATUS_KHR, &done);
+	if (!done)
+		return FALSE;
+	glGetProgramiv(entry->linking, GL_LINK_STATUS, &status);
+	if (status)
+	{
+		entry->program = entry->linking;
+		xgpu_shader_cache_program_linked(entry->vertex_shader, entry->fragment_shader);
+		program_setup(entry);
+	}
+	else
+	{
+		char log[4096];
+
+		glGetProgramInfoLog(entry->linking, sizeof(log), NULL, log);
+		platform_log("cannot link the shader program: %s", log);
+		shader_log(entry->vertex_shader);
+		shader_log(entry->fragment_shader);
+		glDeleteProgram(entry->linking);
+	}
+	entry->linking = 0;
+	return TRUE;
+}
+
+/* NULL: no program for these (one didn't compile or link); program_linking:
+not ready yet */
 static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_shader)
 {
 	static struct program_entry *last;
 	unsigned long hash = (vertex_shader * 2654435761UL) ^ fragment_shader;
 	struct program_entry **bucket = &program_buckets[hash % PROGRAM_BUCKETS];
 	struct program_entry *entry;
-	int stage;
 
 	if (last && last->vertex_shader == vertex_shader && last->fragment_shader == fragment_shader)
 		return last;
@@ -3296,6 +3372,8 @@ static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_s
 	{
 		if (entry->vertex_shader == vertex_shader && entry->fragment_shader == fragment_shader)
 		{
+			if (entry->linking && !program_link_done(entry))
+				return &program_linking;
 			if (!entry->program)
 				return NULL;
 			last = entry;
@@ -3311,9 +3389,32 @@ static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_s
 	if (!vertex_shader || !fragment_shader)
 		return NULL;
 
-	entry->program = xgpu_link_program(vertex_shader, fragment_shader, "shader");
+	/* the warm-up's (xgpu_shader_cache.c), else linked: in the background
+	where the browser can */
+	entry->program = xgpu_shader_cache_program(vertex_shader, fragment_shader);
+	if (!entry->program && xgpu_capabilities.parallel_compile)
+	{
+		entry->linking = glCreateProgram();
+		glAttachShader(entry->linking, vertex_shader);
+		glAttachShader(entry->linking, fragment_shader);
+		glLinkProgram(entry->linking);
+		entry->linking_asked = SDL_GetTicksNS();
+		return &program_linking;
+	}
+	if (!entry->program)
+		entry->program = xgpu_link_program(vertex_shader, fragment_shader, "shader");
 	if (!entry->program)
 		return NULL;
+	program_setup(entry);
+	last = entry;
+	return entry;
+}
+
+/* A program's uniforms, once it's linked */
+static void program_setup(struct program_entry *entry)
+{
+	int stage;
+
 	state_program(entry->program);
 	entry->constants = glGetUniformLocation(entry->program, "c");
 	entry->constant_count = XGPU_VERTEX_CONSTANT_COUNT;
@@ -3369,8 +3470,6 @@ static struct program_entry *program_get(GLuint vertex_shader, GLuint fragment_s
 		snprintf(name, sizeof(name), "tex%d", stage);
 		glUniform1i(glGetUniformLocation(entry->program, name), stage);
 	}
-	last = entry;
-	return entry;
 }
 
 /* ---------- per-draw state */
@@ -4343,6 +4442,9 @@ static struct program_entry *prepare_draw(BOOL immediate)
 	{
 		key.per_pixel_lighting = (unsigned char)program->lighting.lights;
 		entry = program_get(vertex_shader_get(program, immediate, TRUE), fragment_shader_get(&key));
+		/* (drawn once it's linked) */
+		if (entry == &program_linking)
+			return NULL;
 		if (!entry)
 		{
 			/* drawn as the vertex shader lights it instead (not at all,
@@ -4355,6 +4457,8 @@ static struct program_entry *prepare_draw(BOOL immediate)
 	}
 	if (!entry)
 		entry = program_get(vertex_shader_get(program, immediate, FALSE), fragment_shader_get(&key));
+	if (entry == &program_linking)
+		return NULL;
 	if (!entry)
 	{
 		stats.skipped_link++;

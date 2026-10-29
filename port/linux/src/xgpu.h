@@ -33,6 +33,10 @@ struct xgpu_capabilities
 	BOOL color_buffer_half_float;
 	/* "300 es" or "310 es" */
 	const char *shading_language;
+	/* KHR_parallel_shader_compile: a program can be asked whether its link
+	is done without waiting for it (the draws' new programs link in the
+	background: d3d8_gl.c program_get) */
+	BOOL parallel_compile;
 };
 
 extern struct xgpu_capabilities xgpu_capabilities;
