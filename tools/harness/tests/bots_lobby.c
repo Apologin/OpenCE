@@ -49,6 +49,8 @@ struct network_game_server
 
 /* the world the lobby asks */
 static boolean local_game;
+/* bots.network */
+static boolean network_setting;
 static long wanted;
 static short teams_setting;
 static long sends;
@@ -56,6 +58,9 @@ static short next_color;
 
 static boolean network_game_is_splitscreen_local(void) { return local_game; }
 static long bots_wanted_count(void) { return wanted; }
+static int bots_in_network_games(void) { return network_setting; }
+/* (the lobby says whether its last pass changed anything) */
+static boolean network_game_server_port_bots_changed;
 static short bots_teams(void) { return teams_setting; }
 static boolean network_game_player_slot_held(long player_index) { (void)player_index; return FALSE; }
 static void get_unique_random_color(struct network_game_server *server, struct network_player *player)
@@ -90,6 +95,7 @@ static void lobby(short game_engine_index, long maximum)
 	for (index = 0; index < HALO_PORT_MAXIMUM_NETWORK_PLAYERS; index++)
 		network_game_invalidate_player(&server.game.players[index]);
 	local_game = TRUE;
+	network_setting = FALSE;
 	teams_setting = _bots_teams_even;
 	sends = 0;
 }
@@ -260,6 +266,26 @@ int main(int argc, char **argv)
 		local_game = FALSE;
 		network_game_server_port_bots(&server);
 		CHECK(bots_in(&team0, &team1) == 0, "%ld bots stayed in a network game", bots_in(&team0, &team1));
+		return 0;
+	}
+	/* bots.network: a Slayer game other machines may join has them too
+	(the host plays them), and the lobby says when it is settled */
+	CASE("network-when-asked")
+	{
+		lobby(game_engine_slayer, 16);
+		player(0, 0);
+		wanted = 6;
+		local_game = FALSE;
+		network_setting = TRUE;
+		network_game_server_port_bots(&server);
+		CHECK(bots_in(&team0, &team1) == 6, "%ld bots in a network game with bots.network, not 6",
+			bots_in(&team0, &team1));
+		CHECK(network_game_server_port_bots_changed, "the pass that added the bots says nothing changed");
+		network_game_server_port_bots(&server);
+		CHECK(!network_game_server_port_bots_changed, "the lobby is never settled");
+		network_setting = FALSE;
+		network_game_server_port_bots(&server);
+		CHECK(bots_in(&team0, &team1) == 0, "%ld bots stayed once bots.network was off", bots_in(&team0, &team1));
 		return 0;
 	}
 	/* Slayer alone (the other gametypes' goals are not the bots' yet): none

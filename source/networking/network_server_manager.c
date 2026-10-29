@@ -1536,7 +1536,17 @@ is). In a team game they even the teams with the players or, for bots.teams
 teams in the lobby, and the bots follow. They leave when the setting asks
 for fewer, or the game is another gametype. Not once the game has been
 started, nor in a game other machines may join (system link and internet
-games: no bots there, which would need the clients told) */
+games) unless bots.network: the host then plays them and relays their
+controls with each tick (bots_update_actions), and the clients see them as
+remote players */
+static boolean network_game_server_port_bots_changed = TRUE;
+
+boolean network_game_server_port_bots_settled(
+	void)
+{
+	return !network_game_server_port_bots_changed;
+}
+
 static void network_game_server_port_bots(
 	struct network_game_server *server)
 {
@@ -1550,8 +1560,11 @@ static void network_game_server_port_bots(
 
 	if (server->state != _network_game_server_state_pregame || server->sent_start_game_message)
 		return;
-	if (network_game_is_splitscreen_local() && server->game.variant.game_engine_index == game_engine_slayer)
+	if ((network_game_is_splitscreen_local() || bots_in_network_games()) &&
+		server->game.variant.game_engine_index == game_engine_slayer)
+	{
 		wanted = PIN(bots_wanted_count(), 0, BOTS_MAXIMUM);
+	}
 	for (bot_index = 0; bot_index < BOTS_MAXIMUM; bot_index++)
 		slot_of_bot[bot_index] = NONE;
 	for (slot = 0; slot < MAXIMUM_NETWORK_PLAYER_COUNT; slot++)
@@ -1621,6 +1634,7 @@ static void network_game_server_port_bots(
 		}
 		team_counts[team_index]++;
 	}
+	network_game_server_port_bots_changed = changed;
 	if (changed && !network_game_server_send_game_data_pregame(server))
 		network_event("network_game_server_port_bots() failed to send updated game settings to clients");
 }

@@ -33,6 +33,10 @@ void network_game_server_dispose(
 	struct network_game_server *server);
 boolean network_game_server_idle(
 	struct network_game_server *server);
+/* port: the lobby's bots are as the settings ask (its last pass changed
+nothing), for a launcher that starts the game itself (auto_game.c) */
+boolean network_game_server_port_bots_settled(
+	void);
 void network_game_server_open_game(
 	struct network_game_server *server);
 void network_game_server_switch_to_postgame(

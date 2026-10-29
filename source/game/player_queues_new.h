@@ -83,6 +83,12 @@ long update_server_ticked_update_number(
 struct player_action const *update_server_update_actions(
 	long update_number,
 	short *count);
+/* port: (the host) the action the player at that absolute index took in
+the tick just run, in place of its queue's (a bot's: port/linux/game/bots.c),
+so the clients are relayed it */
+void update_server_set_ticked_action(
+	short player_index,
+	struct player_action const *action);
 /* each player's latest input forgotten, for a new game */
 void update_queues_distributed_reset(
 	void);

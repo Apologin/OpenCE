@@ -409,7 +409,12 @@ static const struct config_setting config_settings[] =
 	{ "bots.count", _config_integer, "0", "HALO_BOTS", _environment_value, _platform_all,
 		"Computer players (bots) in a local (split screen) Slayer game: 0 to 15\n"
 		"join its lobby with the players, as far as the game has room. Not in\n"
-		"system link or internet games. 0: none, as in the stock game." },
+		"system link or internet games unless bots.network. 0: none, as in the\n"
+		"stock game." },
+	{ "bots.network", _config_boolean, "false", "HALO_BOTS_NETWORK", _environment_value, _platform_all,
+		"bots.count's bots in a Slayer game this machine hosts for others too\n"
+		"(system link, internet): the host plays them and relays their controls\n"
+		"as it does its players'. Every machine in the game needs this build." },
 	{ "bots.skill", _config_string, "\"normal\"", "HALO_BOT_SKILL", _environment_value, _platform_all,
 		"How well the bots play: \"easy\", \"normal\", \"heroic\" or \"legendary\"\n"
 		"(how soon they react, how well they aim, how far they see)." },

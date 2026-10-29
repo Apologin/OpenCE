@@ -51,6 +51,7 @@ Called from the main loop every frame (main.c).
 #include "game/game_engine.h"
 #include "memory/data.h"
 #include "game/players.h"
+#include "bots.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -430,7 +431,10 @@ static void auto_game_update_host(
 		else
 			network_game_client_add_player(global_network_game_client_get(), 0);
 	}
-	if (auto_game.player_in && (auto_game.start_delay < 0.0f
+	/* (and the bots in, when there are to be any: the lobby adds them once
+	this machine's player is in, and none join a started game) */
+	if (auto_game.player_in && (!bots_wanted_count() || network_game_server_port_bots_settled()) &&
+		(auto_game.start_delay < 0.0f
 		? __atomic_exchange_n(&auto_game_start_asked, 0, __ATOMIC_RELAXED)
 		: auto_game.setup_seconds >= auto_game.start_delay))
 	{

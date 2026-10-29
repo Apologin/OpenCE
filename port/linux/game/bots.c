@@ -75,6 +75,7 @@ and each bot's kills and deaths; debug.bot_trace logs each bot's state.
 #include "structures/structure_bsp_definitions.h"
 #include "physics/collision_bsp_definitions.h"
 #include "networking/network_game_globals.h"
+#include "game/player_queues_new.h"
 #include "ai/path.h"
 #include "devices/devices.h"
 #include "devices/device_definitions.h"
@@ -91,6 +92,7 @@ and each bot's kills and deaths; debug.bot_trace logs each bot's state.
 /* port/linux/src/port_config.c */
 const char *config_string(char const *name);
 long config_integer(char const *name);
+int config_boolean(char const *name);
 void platform_log(char const *format, ...);
 
 /* ---------- constants */
@@ -321,6 +323,11 @@ short bots_skill(void)
 			return skill;
 	}
 	return _bots_skill_normal;
+}
+
+int bots_in_network_games(void)
+{
+	return config_boolean("bots.network");
 }
 
 short bots_teams(void)
@@ -2387,10 +2394,16 @@ void bots_update_actions(struct player_action *actions)
 	struct data_iterator iterator;
 	struct player_datum *player;
 	long count = 0;
+	/* a game hosted for others: the clients drive the bots with the controls
+	the host relays them, as a remote player's (its clients never play them
+	themselves) */
+	boolean hosted = !network_game_is_splitscreen_local();
 
-	/* (local games alone: no other machine sees a bot) */
-	if (!game_engine_running() || !network_game_is_splitscreen_local())
+	if (!game_engine_running() ||
+		(hosted && !(bots_in_network_games() && game_connection() == _game_connection_network_server)))
+	{
 		return;
+	}
 	data_iterator_new(&iterator, player_data);
 	while ((player = (struct player_datum *)data_iterator_next(&iterator)) != NULL)
 	{
@@ -2415,7 +2428,11 @@ void bots_update_actions(struct player_action *actions)
 		if (bot->player_index != iterator.datum_index)
 			bots_bot_reset(bot, iterator.datum_index, bot_index);
 		if (absolute_index >= 0 && absolute_index < HALO_PORT_MAXIMUM_NETWORK_PLAYERS)
+		{
 			bots_bot_update(bot, bot_index, &actions[absolute_index]);
+			if (hosted)
+				update_server_set_ticked_action((short)absolute_index, &actions[absolute_index]);
+		}
 		count++;
 	}
 	if (count)

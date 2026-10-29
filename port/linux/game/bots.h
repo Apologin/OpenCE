@@ -26,8 +26,10 @@ enum
 	_bots_teams_against,
 };
 
-/* the settings (bots.count, bots.skill, bots.teams) */
+/* the settings (bots.count, bots.skill, bots.teams, bots.network) */
 long bots_wanted_count(void);
+/* bots.network: bots in a game this machine hosts for others too */
+int bots_in_network_games(void);
 short bots_skill(void);
 short bots_teams(void);
 
@@ -39,7 +41,8 @@ void bots_network_player(long bot_index, struct network_player *player);
 
 /* the game tick (players_update_before_game): every bot's controls this
 tick, into the actions of the players by their index; nothing outside a
-local game */
+local game, or (bots.network) one this machine hosts, whose clients get the
+bots' controls with the tick's update (update_server_set_ticked_action) */
 void bots_update_actions(struct player_action *actions);
 
 /* a map's start and end (players.c) */
